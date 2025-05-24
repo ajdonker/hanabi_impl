@@ -3,7 +3,7 @@ from game_logic.state import GameState
 from game_logic.cards import Color
 
 HOST, PORT = '0.0.0.0', 12345
-LOBBY_SIZE = 2  # number of players required to start
+LOBBY_SIZE = 2  # number of players required to start. 
 
 clients = []      # list of (conn, addr, name)
 lobby_names = []  # track names until game starts
@@ -36,6 +36,10 @@ def broadcast_state():
 
 
 def handle_client(conn, addr):
+    ''' After accepting client socket (conn,addr), wraps it so that it can read lines as a file.
+    Let LOBBY_SIZE players join before creating game instance. Loop until game ends, accepting 
+    messages and composing proper move to be done in the BoardState object.
+    '''
     global game
     conn_file = conn.makefile('r')
 
@@ -95,7 +99,7 @@ def handle_client(conn, addr):
             except Exception as e:
                 conn.sendall((json.dumps({"type": "ERROR", "msg": str(e)}) + "\n").encode())
 
-    # cleanup on disconnect
+    # cleanup on disconnect - close all wrapped sockets
     with lock:
         clients[:] = [c for c in clients if c[0] != conn]
     conn_file.close()
