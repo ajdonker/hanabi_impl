@@ -8,7 +8,6 @@ class PlayerState():
     def __init__(self,name:str,hand_size:int):
         self.name = name
         self.hand = [None]*hand_size
-        # might need to construct something for card info - dict for each card 
         self.hints = [[] for _ in range(hand_size)]  # append string data to these 
         # clear when that card is played / discarded 
     def clear_hints(self, card_idx: int):
@@ -97,26 +96,6 @@ class GameState():
         if self.deck.get_deck_count() == 0:
             return True
         return False
-
-    # def serialize_state(self):
-    #     hands_data = []
-    #     for player in self.players:
-    #         player_data = [] 
-    #         for idx,card in enumerate(player.hand):
-    #             player_data.append({
-    #                 'number':card.number,
-    #                 'color':card.color.name,
-    #                 'hints':player.hints[idx]
-    #             })
-    #         hands_data.append(player_data)
-    #     return {
-    #     'board': {c.name: v for c, v in self.board.items()},
-    #     'tokens': self.tokens,
-    #     'misfires': self.misfires,
-    #     'deck_count': self.deck.get_deck_count(),
-    #     'hands': hands_data, 
-    #     'current_turn': self.current_turn
-    # }
 
 
 
