@@ -1,3 +1,4 @@
+import redis
 import socket, threading, json
 from game_logic.state import GameState
 from game_logic.cards import Color
@@ -9,7 +10,7 @@ clients = []      # list of (conn, addr, name)
 lobby_names = []  # track names until game starts
 game = None # global variable. A single server process handles only 1 game instance. 
 lock = threading.Lock()
-
+r = redis.Redis(host = 'redis',decode_responses=True)
 
 def broadcast_state():
     """Send current game state to all connected clients."""
@@ -28,6 +29,7 @@ def broadcast_state():
         "current_turn": game.current_turn
     }
     msg = json.dumps(payload) + "\n"
+    r.set('hanabi:state',msg.strip())
     for conn, _, _ in clients:
         try:
             conn.sendall(msg.encode())
