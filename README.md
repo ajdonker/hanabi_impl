@@ -6,3 +6,9 @@
 - python -m client.client
  
 Game can start when LOBBY_SIZE players will join the server process. Enjoy! 
+
+
+
+
+
+1. docker compose up --build

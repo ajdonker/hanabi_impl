@@ -61,23 +61,68 @@ class Client:
             self.prompt_action()
 
     def prompt_action(self):
-        cmd = input("Your move (PLAY idx / HINT p color / DISC idx): ")
-        parts = cmd.split()
-        if parts[0] == "PLAY":
-            msg = {"type": "PLAY", "player_idx": self.idx, "card_idx": int(parts[1])}
-        elif parts[0] == "HINT":
-            target = int(parts[1]) # which player you hint at 
-            # can be also bound checked whether it belongs in the bounds for play 
-            val = parts[2]
-            if val.isdigit():  # number hint
-                msg = {"type": "HINT", "from": self.idx, "to": target, "number": int(val)}
-            else:  # color hint
-                msg = {"type": "HINT", "from": self.idx, "to": target, "color": val.upper()}
-        elif parts[0] == "DISC":
-            msg = {"type": "DISC", "player_idx": self.idx, "card_idx": int(parts[1])}
-        else:
-            print("Invalid command")
-            return
+        while True:
+            cmd = input("Your move (PLAY idx / HINT p val / DISC idx): ").strip()
+            parts = cmd.split()
+            if not parts:
+                print("Empty command—try again")
+                continue
+
+            action = parts[0].upper()
+            if action == "PLAY":
+                if len(parts) != 2 or not parts[1].isdigit():
+                    print("Usage: PLAY <card_idx>")
+                    continue
+                msg = {
+                    "type": "PLAY",
+                    "player_idx": self.idx,
+                    "card_idx": int(parts[1])
+                }
+                break
+
+            elif action == "DISC":
+                if len(parts) != 2 or not parts[1].isdigit():
+                    print("Usage: DISC <card_idx>")
+                    continue
+                msg = {
+                    "type": "DISC",
+                    "player_idx": self.idx,
+                    "card_idx": int(parts[1])
+                }
+                break
+
+            elif action == "HINT":
+                # must be exactly 3 parts: HINT <player> <val>
+                if len(parts) != 3:
+                    print("Usage: HINT <player_idx> <color|number>")
+                    continue
+
+                target_str, val = parts[1], parts[2]
+                if not target_str.isdigit():
+                    print("Second argument must be the target player index.")
+                    continue
+                target = int(target_str)
+
+                if val.isdigit():
+                    msg = {
+                        "type": "HINT",
+                        "from": self.idx,
+                        "to": target,
+                        "number": int(val)
+                    }
+                else:
+                    msg = {
+                        "type": "HINT",
+                        "from": self.idx,
+                        "to": target,
+                        "color": val.upper()
+                    }
+                break
+            else:
+                print("Unknown command. Use PLAY, DISC, or HINT.")
+                continue
+
+            # send well-formed message after loop broken 
         self.sock.sendall((json.dumps(msg) + "\n").encode())
 
 if __name__ == "__main__":
