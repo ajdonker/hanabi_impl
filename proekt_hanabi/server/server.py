@@ -1,8 +1,10 @@
-import redis
+import redis,os
 import socket, threading, json
 from game_logic.state import GameState
 from game_logic.cards import Color
 
+REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 HOST, PORT = '0.0.0.0', 12345
 LOBBY_SIZE = 2  # number of players required to start. 
 
@@ -10,7 +12,7 @@ clients = []      # list of (conn, addr, name)
 lobby_names = []  # track names until game starts
 game = None # global variable. A single server process handles only 1 game instance. 
 lock = threading.Lock()
-r = redis.Redis(host = 'redis',decode_responses=True)
+r = redis.Redis(host = REDIS_HOST,port= REDIS_PORT,decode_responses=True)
 
 def broadcast_state():
     """Send current game state to all connected clients."""
