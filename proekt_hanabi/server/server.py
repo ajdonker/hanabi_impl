@@ -2,17 +2,39 @@ import redis,os
 import socket, threading, json
 from game_logic.state import GameState
 from game_logic.cards import Color
+from redis.sentinel import Sentinel
 
-REDIS_HOST = os.getenv("REDIS_HOST", "redis")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 HOST, PORT = '0.0.0.0', 12345
+
+# REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+# REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+
+SENTINEL_NODES  = os.getenv("SENTINEL_NODES", "sentinel:26379").split(",")
+SENTINEL_MASTER = os.getenv("SENTINEL_MASTER_NAME", "mymaster")
+
+# Parse "host:port" list into tuples
+sentinel_endpoints = []
+for node in SENTINEL_NODES:
+    host, port = node.split(":")
+    sentinel_endpoints.append((host, int(port)))
+
+# Connect via Sentinel
+sent = Sentinel(sentinel_endpoints, socket_timeout=0.1)
+r = sent.master_for(
+    SENTINEL_MASTER,
+    socket_timeout=0.1,
+    decode_responses=True
+)
+
+print(f"[*] Connected to Redis master via Sentinel '{SENTINEL_MASTER}' at {sentinel_endpoints}")
+
 LOBBY_SIZE = 2  # number of players required to start. 
 
 clients = []      # list of (conn, addr, name)
 lobby_names = []  # track names until game starts
 game = None # global variable. A single server process handles only 1 game instance. 
 lock = threading.Lock()
-r = redis.Redis(host = REDIS_HOST,port= REDIS_PORT,decode_responses=True)
+# r = redis.Redis(host = REDIS_HOST,port= REDIS_PORT,decode_responses=True)
 
 def broadcast_state():
     """Send current game state to all connected clients."""
@@ -42,7 +64,7 @@ def broadcast_state():
 def handle_client(conn, addr):
     ''' After accepting client socket (conn,addr), wraps it so that it can read lines as a file.
     Let LOBBY_SIZE players join before creating game instance. Loop until game ends, accepting 
-    messages and composing proper move to be done in the BoardState object.
+    messages and composing proper move to be done in the GameState object.
     '''
     global game
     conn_file = conn.makefile('r')
@@ -61,12 +83,9 @@ def handle_client(conn, addr):
         if game is None:
             # still in lobby phase
             lobby_names.append(name)
-            # assign idx and inform client
             conn.sendall((json.dumps({"type": "ASSIGN_IDX", "idx": idx}) + "\n").encode())
-            # start game when lobby full
             if len(lobby_names) == LOBBY_SIZE:
                 game = GameState(lobby_names)
-                # broadcast initial state
                 broadcast_state()
         else:
             # game already started: reject or assign new spectator idx
@@ -74,7 +93,6 @@ def handle_client(conn, addr):
             conn.close()
             return
 
-    # Main loop: only after game started
     while True:
         line = conn_file.readline()
         if not line:

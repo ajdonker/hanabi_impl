@@ -1,6 +1,6 @@
 import socket, json, threading
 
-HOST, PORT = 'localhost', 12345
+HOST, PORT = '0.0.0.0', 12345
 
 class Client:
     def __init__(self):
