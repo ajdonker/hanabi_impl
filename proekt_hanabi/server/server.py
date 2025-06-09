@@ -20,11 +20,16 @@ for node in SENTINEL_NODES:
 
 # Connect via Sentinel
 sent = Sentinel(sentinel_endpoints, socket_timeout=0.1)
-r = sent.master_for(
-    SENTINEL_MASTER,
-    socket_timeout=0.1,
-    decode_responses=True
-)
+def get_master_client():
+    """
+    Return a fresh Redis client pointing to the current master.
+    """
+    return sent.master_for(
+        SENTINEL_MASTER,
+        socket_timeout=0.1,
+        decode_responses=True
+    )
+r = get_master_client()
 
 print(f"[*] Connected to Redis master via Sentinel '{SENTINEL_MASTER}' at {sentinel_endpoints}")
 
@@ -37,7 +42,9 @@ lock = threading.Lock()
 # r = redis.Redis(host = REDIS_HOST,port= REDIS_PORT,decode_responses=True)
 
 def broadcast_state():
-    """Send current game state to all connected clients."""
+    """Send current game state to all connected clients.
+    When master changed, rediscover master client"""
+    global r
     payload = {
         "type": "STATE",
         "board": {c.name: v for c, v in game.board.items()},
@@ -53,7 +60,19 @@ def broadcast_state():
         "current_turn": game.current_turn
     }
     msg = json.dumps(payload) + "\n"
-    r.set('hanabi:state',msg.strip())
+
+    for attempt in range(2):
+        try:
+            r.set("hanabi:state", msg.strip())
+            break
+        except (redis.exceptions.ReadOnlyError, redis.exceptions.ConnectionError) as e:
+            # Master has been demoted, re-fetch the new one
+            print("[WARN] Master changed, re-discovering via Sentinel:", e)
+            
+            r = get_master_client()
+    else:
+        print("[ERROR] Could not write to Redis master after retry")
+
     for conn, _, _ in clients:
         try:
             conn.sendall(msg.encode())
