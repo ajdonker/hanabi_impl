@@ -5,7 +5,7 @@ from game_logic.cards import Color
 from redis.sentinel import Sentinel
 
 HOST, PORT = '0.0.0.0', 12345
-
+# refactored to use sentinel 
 # REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 # REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 
@@ -33,36 +33,25 @@ r = get_master_client()
 
 print(f"[*] Connected to Redis master via Sentinel '{SENTINEL_MASTER}' at {sentinel_endpoints}")
 
-LOBBY_SIZE = 2  # number of players required to start. 
+LOBBY_SIZE = 2  # number of players required to start. >2, <= 5
 
 clients = []      # list of (conn, addr, name)
 lobby_names = []  # track names until game starts
 game = None # global variable. A single server process handles only 1 game instance. 
 lock = threading.Lock()
-# r = redis.Redis(host = REDIS_HOST,port= REDIS_PORT,decode_responses=True)
 
 def broadcast_state():
     """Send current game state to all connected clients.
     When master changed, rediscover master client"""
     global r
-    payload = {
-        "type": "STATE",
-        "board": {c.name: v for c, v in game.board.items()},
-        "tokens": game.tokens,
-        "misfires": game.misfires,
-        "deck_count": game.deck.get_deck_count(),
-        "hands": [
-            [ {"number": card.number, "color": card.color.name, "hints": ps.hints[idx]}
-              for idx, card in enumerate(ps.hand) ]
-            for ps in game.players
-        ],
-        "players": [name for (_, _, name) in clients],
-        "current_turn": game.current_turn
-    }
-    msg = json.dumps(payload) + "\n"
-
+    snap = game.serialize_state()
+    snap_json = json.dumps(snap)
+    msg  = json.dumps({"type":"STATE", **snap}) + "\n"
+    state_key = f"hanabi:state:{game.game_id}"
+    # persist for future reloads
     for attempt in range(2):
         try:
+            r.set(state_key,snap_json)
             r.set("hanabi:state", msg.strip())
             break
         except (redis.exceptions.ReadOnlyError, redis.exceptions.ConnectionError) as e:
@@ -72,44 +61,56 @@ def broadcast_state():
             r = get_master_client()
     else:
         print("[ERROR] Could not write to Redis master after retry")
-
+    # send to all clients
     for conn, _, _ in clients:
         try:
             conn.sendall(msg.encode())
-        except Exception:
+        except:
             pass
 
-
 def handle_client(conn, addr):
-    ''' After accepting client socket (conn,addr), wraps it so that it can read lines as a file.
-    Let LOBBY_SIZE players join before creating game instance. Loop until game ends, accepting 
-    messages and composing proper move to be done in the GameState object.
-    '''
     global game
     conn_file = conn.makefile('r')
 
-    # Receive JOIN
+    # First line MUST be a JOIN type mess
     line = conn_file.readline()
     if not line:
         conn.close()
         return
-    join = json.loads(line)
-    name = join.get("player")
+    join   = json.loads(line)
+    name   = join.get("player")
+    old_id = join.get("game_id")
 
     with lock:
-        idx = len(clients)
-        clients.append((conn, addr, name))
+        # ---- LOBBY PHASE ----
         if game is None:
-            # still in lobby phase
+            if name in lobby_names:
+                err = json.dumps({"type":"ERROR","msg":"Name already taken"}) + "\n"
+                conn.sendall(err.encode())
+                return
+
+            idx = len(lobby_names)
             lobby_names.append(name)
-            conn.sendall((json.dumps({"type": "ASSIGN_IDX", "idx": idx}) + "\n").encode())
+            clients.append((conn, addr, name))
+
+            msg = json.dumps({"type":"ASSIGN_IDX","idx":idx}) + "\n"
+            conn.sendall(msg.encode())
+
             if len(lobby_names) == LOBBY_SIZE:
-                game = GameState(lobby_names)
+                if old_id:
+                    raw = r.get(f"hanabi:state:{old_id}")
+                    if raw:
+                        data = json.loads(raw)
+                        game = GameState.from_serialized(data)
+                    else:
+                        game = GameState(lobby_names)
+                else:
+                    game = GameState(lobby_names)
                 broadcast_state()
+
         else:
-            # game already started: reject or assign new spectator idx
-            conn.sendall((json.dumps({"type": "ERROR", "msg": "Game already in progress"}) + "\n").encode())
-            conn.close()
+            err = json.dumps({"type":"ERROR","msg":"Game already in progress"}) + "\n"
+            conn.sendall(err.encode())
             return
 
     while True:
@@ -123,28 +124,19 @@ def handle_client(conn, addr):
                     game.play_card(msg["player_idx"], msg["card_idx"])
                 elif msg.get("type") == "HINT":
                     if "color" in msg:
-                        game.give_hint(
-                            msg["from"],
-                            msg["to"],
-                            color=Color[msg["color"]]
-                        )
+                        game.give_hint(msg["from"], msg["to"],color=Color[msg["color"]])
                     elif "number" in msg:
-                        game.give_hint(
-                            msg["from"],
-                            msg["to"],
-                            number=msg["number"]
-                        )
+                        game.give_hint(msg["from"], msg["to"],number=msg["number"])
                 elif msg.get("type") == "DISC":
                     game.discard(msg["player_idx"], msg["card_idx"])
                 broadcast_state()
             except Exception as e:
-                conn.sendall((json.dumps({"type": "ERROR", "msg": str(e)}) + "\n").encode())
-
-    # cleanup on disconnect - close all wrapped sockets
+                err = json.dumps({"type":"ERROR","msg":str(e)}) + "\n"
+                conn.sendall(err.encode())
     with lock:
         clients[:] = [c for c in clients if c[0] != conn]
-    conn_file.close()
-    conn.close()
+        conn_file.close()
+        conn.close()
 
 
 def main():

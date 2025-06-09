@@ -4,7 +4,7 @@ HOST, PORT = '0.0.0.0', 12345
 
 class Client:
     def __init__(self):
-        # Connect to server and create file-like reader
+        '''Connect to server and create file-like reader'''
         self.sock = socket.socket()
         self.sock.connect((HOST, PORT))
         self.sock_file = self.sock.makefile('r')
@@ -16,7 +16,14 @@ class Client:
 
         # Send JOIN immediately after connecting
         name = input("Your name> ")
-        join_msg = json.dumps({"type": "JOIN", "player": name}) + "\n"
+        old_id  = input("Game ID to resume (leave blank for new)> ").strip() or None
+        join_payload = {
+            "type":   "JOIN",
+            "player": name
+        }
+        if old_id:
+            join_payload["game_id"] = old_id
+        join_msg = json.dumps(join_payload) + "\n"
         self.sock.sendall(join_msg.encode())
 
     def receive_loop(self):
@@ -40,13 +47,14 @@ class Client:
                 print("Error from server:", msg.get("msg"))
 
     def handle_state(self, state):
+        ''' Prints received state and prompts for action if neccessary'''
         self.current_turn = state.get("current_turn")
         print("--- Game State ---")
         print("Board:", state.get("board"))
         print("Tokens:", state.get("tokens"), "Misfires:", state.get("misfires"))
         for i, hand in enumerate(state.get("hands", [])):
             if i == self.idx:
-                # Show hints for your own cards
+                # Show only the hints for your own cards
                 display = []
                 for card_info in hand:
                     # card_info is a dict with 'number','color','hints'
