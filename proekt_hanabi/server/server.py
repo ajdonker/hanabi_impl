@@ -72,7 +72,6 @@ def handle_client(conn, addr):
     global game
     conn_file = conn.makefile('r')
 
-    # First line MUST be a JOIN type mess
     line = conn_file.readline()
     if not line:
         conn.close()
@@ -82,7 +81,6 @@ def handle_client(conn, addr):
     old_id = join.get("game_id")
 
     with lock:
-        # ---- LOBBY PHASE ----
         if game is None:
             if name in lobby_names:
                 err = json.dumps({"type":"ERROR","msg":"Name already taken"}) + "\n"

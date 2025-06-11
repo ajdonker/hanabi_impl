@@ -130,7 +130,6 @@ class Client:
                 print("Unknown command. Use PLAY, DISC, or HINT.")
                 continue
 
-            # send well-formed message after loop broken 
         self.sock.sendall((json.dumps(msg) + "\n").encode())
 
 if __name__ == "__main__":
