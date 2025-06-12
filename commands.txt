@@ -1,0 +1,14 @@
+docker compose exec sentinel \
+  redis-cli -p 26379 SENTINEL get-master-addr-by-name mymaster
+
+docker compose exec sentinel \
+  redis-cli -p 26379 SENTINEL slaves mymaster
+
+docker compose exec redis-master \
+  redis-cli INFO replication
+
+docker compose exec redis-replica \
+  redis-cli INFO replication
+
+docker compose exec redis-master \
+redis-cli KEYS '*'
